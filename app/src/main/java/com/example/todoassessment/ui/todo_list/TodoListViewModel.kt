@@ -1,48 +1,69 @@
 package com.example.todoassessment.ui.todo_list
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.example.todoassessment.TodoApplication
-import com.example.todoassessment.data.local.TodoEntity
-import com.example.todoassessment.data.repository.TodoRepository
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import com.example.todoassessment.data.Todo
+import com.example.todoassessment.data.TodoRepository
+import com.example.todoassessment.util.Routes
+import com.example.todoassessment.util.UiEvent
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class TodoListViewModel(private val repository: TodoRepository) : ViewModel() {
+@HiltViewModel
+class TodoListViewModel @Inject constructor(
+    private val repository: TodoRepository
+) : ViewModel() {
 
-    val todos: StateFlow<List<TodoEntity>> = repository.getAllTodos()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    val todos = repository.getTodos()
+
+    private val _uiEvent = Channel<UiEvent>()
+    val uiEvent = _uiEvent.receiveAsFlow()
+
+    private var deletedTodo: Todo? = null
 
     fun onEvent(event: TodoListEvent) {
-        when (event) {
-            is TodoListEvent.OnDeleteTodo -> {
-                viewModelScope.launch {
-                    repository.deleteTodo(event.todo)
+        when(event) {
+            is TodoListEvent.OnTodoClick -> {
+                sendUiEvent(UiEvent.Navigate(Routes.ADD_EDIT_TODO + "?todoId=${event.todo.id}"))
+            }
+            is TodoListEvent.OnAddTodoClick -> {
+                sendUiEvent(UiEvent.Navigate(Routes.ADD_EDIT_TODO))
+            }
+            is TodoListEvent.OnUndoDeleteClick -> {
+                deletedTodo?.let { todo ->
+                    viewModelScope.launch {
+                        repository.insertTodo(todo)
+                    }
                 }
             }
-            is TodoListEvent.OnToggleComplete -> {
+            is TodoListEvent.OnDeleteTodoClick -> {
                 viewModelScope.launch {
-                    repository.upsertTodo(event.todo.copy(isCompleted = event.isCompleted))
+                    deletedTodo = event.todo
+                    repository.deleteTodo(event.todo)
+                    sendUiEvent(UiEvent.ShowSnackbar(
+                        message = "Todo deleted",
+                        action = "Undo"
+                    ))
+                }
+            }
+            is TodoListEvent.OnDoneChange -> {
+                viewModelScope.launch {
+                    repository.insertTodo(
+                        event.todo.copy(
+                            isDone = event.isDone
+                        )
+                    )
                 }
             }
         }
     }
 
-    companion object {
-        val Factory: ViewModelProvider.Factory = viewModelFactory {
-            initializer {
-                val application = (this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TodoApplication)
-                TodoListViewModel(application.container.todoRepository)
-            }
+    private fun sendUiEvent(event: UiEvent) {
+        viewModelScope.launch {
+            _uiEvent.send(event)
         }
     }
 }

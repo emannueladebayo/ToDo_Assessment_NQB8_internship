@@ -1,14 +1,7 @@
 package com.example.todoassessment
 
 import android.app.Application
-import com.example.todoassessment.di.AppContainer
-import com.example.todoassessment.di.AppContainerImpl
+import dagger.hilt.android.HiltAndroidApp
 
-class TodoApplication : Application() {
-    lateinit var container: AppContainer
-
-    override fun onCreate() {
-        super.onCreate()
-        container = AppContainerImpl(this)
-    }
-}
+@HiltAndroidApp
+class TodoApplication : Application()
